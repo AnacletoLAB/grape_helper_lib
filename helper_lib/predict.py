@@ -208,8 +208,8 @@ def generate_embedding(
     Parameters:
     - positive_training_graph: Graph to generate the embedding for.
     - embedder: Embedder object to use for embedding generation.
-    - cache_embedding_externally: Whether to cache the embedding externally.
-    - holdout_number: Number of the holdout set.
+    - cache_embedding_externally: Whether to cache the embedding externally, not yet implemented.
+    - holdout_number: Number of the holdout set, used for cache file name.
 
     Returns:
     - Embedding for the graph.
@@ -268,7 +268,7 @@ def graph_to_edge_embeddings(
     Parameters:
     - embedding: Embedding object to extract the embeddings from.
     - graph: Graph object to extract the embeddings for.
-    - node_embeddings_concatenation_method: Method to combine the node embeddings.
+    - node_embeddings_concatenation_method: Method to combine the node embeddings (Only "Hadamard" and "Concatenate" are currently implemented).
     - treat_edges_as_bidirectional: Whether to treat edges as bidirectional when the graph is undirected.
 
     Returns:
@@ -327,6 +327,7 @@ def train_sklearn_model(
     - positive_train_graph: Positive training graph.
     - negative_train_graph: Negative training graph.
     - random_state: Random seed for reproducibility.
+    - node_embeddings_concatenation_method: Method to combine the node embeddings (Only "Hadamard" and "Concatenate" are currently implemented).
     - treat_edges_as_bidirectional: Whether to consider both directions of an edge in an undirected graph for the generation of train/test sets.
 
     Returns:
@@ -411,7 +412,7 @@ def test_sklearn_model(
     - train_embedding: Embedding used to train the model.
     - positive_test_graph: Positive test graph.
     - negative_test_graph: Negative test graph.
-    - node_embedding_concatenation_method: Method to combine the node embeddings.
+    - node_embedding_concatenation_method: Method to combine the node embeddings (Only "Hadamard" and "Concatenate" are currently implemented).
     - treat_edges_as_bidirectional: Whether to consider both directions of an edge in an undirected graph for the generation of train/test sets.
 
     Returns:
@@ -512,6 +513,7 @@ def edge_prediction_pipeline_sklearn(
     - training_unbalance_rate: Unbalance rate for the training set.
     - cache_embedding_externally: Whether to cache the embedding externally.
     - graph_to_generate_negatives_from: Graph object to use to generate the negative samples, if not set, the negative samples will be generated from the graph itself.
+    - node_embeddings_concatenation_method: Method to combine the node embeddings (Only "Hadamard" and "Concatenate" are currently implemented).
     - treat_edges_as_bidirectional: Whether to consider both directions of an edge in an undirected graph for the generation of train/test sets.
 
     Returns:
@@ -694,7 +696,7 @@ def edge_prediction_pipeline_sklearn(
     return (holdouts, results_df)
 
 
-def calculate_mask(src_node_names, dst_node_names, edges_to_filter):
+def calculate_mask(src_node_names, dst_node_names, edges_to_filter) -> np.array:
     """
     Calculate a mask to filter out a set of edges.
 
@@ -702,6 +704,9 @@ def calculate_mask(src_node_names, dst_node_names, edges_to_filter):
     - src_node_names: Source node names.
     - dst_node_names: Destination node names.
     - edges_to_filter: Set of training edges.
+
+    Returns:
+    - numpy array to use as mask to filter edges
     """
 
     src_node_names_repeated = np.repeat(src_node_names, len(dst_node_names))
@@ -738,7 +743,7 @@ def save_chunk(
     current_chunk,
     filename,
     path,
-):
+) -> string:
     """
     Save a chunk of predictions to a parquet file.
 
@@ -779,7 +784,7 @@ def predict_all_edges(
     chunks_filename="predictions",
     chunks_path="predictions/",
     holdout_path="holdouts/",
-):
+) -> List[str]:
     """
     Predict all edges between two node types using the trained model. The predictions are saved in parquet chunks to avoid memory issues.
     The predictions are saved in the following format:
@@ -1043,15 +1048,17 @@ def edge_prediction_pipeline(
         )
 
         training_set_size = len(train_pred)
-        print(f"Positive Training set size: {training_set_size}")
-        print(
+        logging.info(f"Positive Training set size: {training_set_size}")
+        logging.info(
             f"Graph filtered undirected edges: {train_graph_filtered.get_number_of_edges()}"
         )
-        print(
+        logging.info(
             f"Graph filtered directed edges: {train_graph_filtered.get_number_of_directed_edges()}"
         )
-        print(f"Graph undirected edges: {train_graph.get_number_of_edges()}")
-        print(f"Graph directed edges: {train_graph.get_number_of_directed_edges()}")
+        logging.info(f"Graph undirected edges: {train_graph.get_number_of_edges()}")
+        logging.info(
+            f"Graph directed edges: {train_graph.get_number_of_directed_edges()}"
+        )
 
         pos_train_score = balanced_accuracy_score(
             [True for _ in range(len(train_pred))],
@@ -1222,6 +1229,14 @@ def _new_fit(
         Union[Type[AbstractEdgeFeature], List[Type[AbstractEdgeFeature]]]
     ] = None,
 ):
+    """
+    Updated fit function for GRAPE Edge prediction models to avoid the bias caused by
+    sampling negative edges from the training graph.
+    The parameters of the function weren't altered to avoid problems in the rest of
+    the GRAPE code.
+    To use this fit function, call the update_fit function that will override the method
+    in the GRAPE.
+    """
     logging.debug("UPDATED _FIT")
     lpt = EdgePredictionTransformer(
         methods=self._edge_embedding_methods,
@@ -1291,27 +1306,27 @@ def _new_fit(
 
     # # calcualate the intersection between the view0 dataframe and the negative dataframe to check for overlap
     # intersection_neg = pd.merge(df_view, df_negative_graph_triples, how='inner', on=['source','destination'])
-    # print(f"Percentage of negative train set that is actually positive: {len(intersection_neg)/len(df_negative_graph_triples)}")
-    # print(f"Absolute value: {len(intersection_neg)}")
+    # logging.info(f"Percentage of negative train set that is actually positive: {len(intersection_neg)/len(df_negative_graph_triples)}")
+    # logging.info(f"Absolute value: {len(intersection_neg)}")
     # false_negatives.append(len(intersection_neg)/len(df_negative_graph_triples))
 
-    # print(f"Positive training set size: {len(df_positive_graph_triples)}")
-    # print relative frequencies of top 10 source_type - destination_type in train and test set compared to full graph
+    # logging.info(f"Positive training set size: {len(df_positive_graph_triples)}")
+    # logging.info relative frequencies of top 10 source_type - destination_type in train and test set compared to full graph
     # for i,(key,count) in enumerate(df_positive_graph_triples['complete_label'].value_counts().items()):
-    #    print(f"{key}: {count}")
+    #    logging.info(f"{key}: {count}")
     #    if i == 9 :
     #        break
-    # print(f"Negative training set size: {len(df_negative_graph_triples)}")
-    # print relative frequencies of top 10 source_type - destination_type in train and test set compared to full graph
+    # logging.info(f"Negative training set size: {len(df_negative_graph_triples)}")
+    # logging.info relative frequencies of top 10 source_type - destination_type in train and test set compared to full graph
     # for i,(key,count) in enumerate(df_negative_graph_triples['complete_label'].value_counts().items()):
-    #    print(f"{key}: {count}")
+    #    logging.info(f"{key}: {count}")
     #    if i == 9 :
     #        break
 
     # does not work properly
     # if(len(intersection_neg)>0):
     #     # remove positive edges from negative test set
-    #     print("Removing positive edges from negative graph")
+    #     logging.info("Removing positive edges from negative graph")
     #     # can't filter by edge id since it could make the graph directed (error from grape)
     #     edge_ids_to_remove = intersection_neg['edge_y'].unique()
     #     negative_graph = negative_graph.to_directed()
@@ -1321,8 +1336,8 @@ def _new_fit(
 
     #     df_negative_graph_triples = helper_lib.graph.build_triples_df(negative_graph).drop_duplicates()
     #     intersection_neg = pd.merge(df_view, df_negative_graph_triples, how='inner', on=['source','destination'])
-    #     print(f"[CLEANED] Percentage of negative train set that is actually positive: {len(intersection_neg)/len(df_negative_graph_triples)}")
-    #     print(f"[CLEANED] Absolute value: {len(intersection_neg)}")
+    #     logging.info(f"[CLEANED] Percentage of negative train set that is actually positive: {len(intersection_neg)/len(df_negative_graph_triples)}")
+    #     logging.info(f"[CLEANED] Absolute value: {len(intersection_neg)}")
 
     assert negative_graph.has_edges()
 
@@ -1349,7 +1364,7 @@ def _new_fit(
             number_of_positive_edges + 1,
             number_of_positive_edges,
         ):
-            print(
+            logging.info(
                 "The negative graph should have the same number of edges as the "
                 "positive graph when using a training unbalance rate of 1.0. "
                 "We expect the negative graph to have "
@@ -1403,6 +1418,15 @@ def _new_fit(
 
 
 def update_fit(edge_prediction_model, pair_to_predict, original_graph):
+    """
+    Replace the biased fit function in the GRAPE edge prediction model to avoid the
+    false negatives bias.
+
+    Parameters:
+    - edge_prediction_model: GRAPE prediction model you want to fix the bias of.
+    - pair_to_predict: the pair of node types whose edges you want to predict.
+    - original_graph: the graph to generate the negative edges from (use the full graph to avoid biases).
+    """
     edge_prediction_model._pair_to_predict = pair_to_predict
     edge_prediction_model._original_graph = original_graph
     edge_prediction_model._fit = MethodType(_new_fit, edge_prediction_model)

@@ -2,6 +2,9 @@ import pandas as pd
 
 
 def check_if_in_graph(graph, src_node, dst_node, pair_to_predict=None):
+    """
+    Function to verify if the graph contains a specific edge between two nodes
+    """
     try:
         if pair_to_predict:
             # check if the node type match
@@ -36,6 +39,9 @@ def check_if_in_graph(graph, src_node, dst_node, pair_to_predict=None):
 
 
 def build_triples_df(graph):
+    """
+    Build a dataframe with edge information about each edge in the graph.
+    """
     df = pd.DataFrame()
     if graph.is_directed():
         edge_node_ids = (
